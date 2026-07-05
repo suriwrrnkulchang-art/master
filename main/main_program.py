@@ -65,7 +65,7 @@ except ImportError:
 
 # TODO: ตั้งค่า UPDATE_CHANNEL_DIR ให้ตรงกับโฟลเดอร์ Update Channel
 # ที่ตั้งไว้ใน admin_updater.py (โฟลเดอร์แชร์ / Google Drive / OneDrive ฯลฯ)
-UPDATE_CHANNEL_DIR = r""  # เช่น r"C:\SharedUpdateChannel" หรือ "/mnt/shared/update_channel"
+UPDATE_CHANNEL_DIR = r"C:\SharedUpdateChannel" # เช่น r"C:\SharedUpdateChannel" หรือ "/mnt/shared/update_channel"
 
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
