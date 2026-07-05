@@ -116,6 +116,12 @@ class AutoUpdater:
         self._dismissed_versions = set()
         self._popup_open = False
 
+        # ใช้กันไม่ให้ log ข้อความเดิมซ้ำทุกรอบ (จะแจ้งแค่ตอนสถานะเปลี่ยน)
+        self._warned_no_channel = False
+        self._warned_bad_channel = False
+        self._warned_no_manifest = False
+        self._last_seen_remote_version = None
+
         self._local_version_path = os.path.join(self.install_dir, LOCAL_VERSION_FILE)
         self._ensure_local_version_file()
 
@@ -150,7 +156,11 @@ class AutoUpdater:
         self._stop_flag.clear()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
-        self.on_log(f"🔄 เริ่มระบบตรวจสอบอัพเดทอัตโนมัติ (ทุก {POLL_INTERVAL_SEC} วินาที)")
+        self.on_log(
+            f"🔄 เริ่มระบบตรวจสอบอัพเดทอัตโนมัติ (ทุก {POLL_INTERVAL_SEC} วินาที) "
+            f"| เวอร์ชันเครื่องนี้: {self._read_local_version()} "
+            f"| Update Channel: {self.channel_dir or '(ยังไม่ได้ตั้งค่า)'}"
+        )
 
     def stop(self):
         self._stop_flag.set()
@@ -168,36 +178,68 @@ class AutoUpdater:
                 time.sleep(1)
 
     def _check_once(self):
-        if not self.channel_dir or not os.path.isdir(self.channel_dir):
-            return  # ยังไม่ได้ตั้งค่า / เข้าถึงโฟลเดอร์ไม่ได้ ก็ข้ามรอบนี้ไป
+        if not self.channel_dir:
+            if not self._warned_no_channel:
+                self.on_log("⚠ ยังไม่ได้ตั้งค่า UPDATE_CHANNEL_DIR ในโปรแกรมหลัก จึงตรวจสอบอัพเดทไม่ได้ "
+                            "— ให้แก้ตัวแปร UPDATE_CHANNEL_DIR ในไฟล์โปรแกรมหลักให้ชี้ไปที่โฟลเดอร์ Update Channel")
+                self._warned_no_channel = True
+            return
+        self._warned_no_channel = False
+
+        if not os.path.isdir(self.channel_dir):
+            if not self._warned_bad_channel:
+                self.on_log(f"⚠ เข้าถึงโฟลเดอร์ Update Channel ไม่ได้: {self.channel_dir} "
+                            "(เช็คว่าพาธถูกต้อง สะกดถูก และเครื่องนี้เข้าถึงโฟลเดอร์นี้ได้จริง)")
+                self._warned_bad_channel = True
+            return
+        self._warned_bad_channel = False
+
         manifest_path = os.path.join(self.channel_dir, MANIFEST_NAME)
         if not os.path.exists(manifest_path):
+            if not self._warned_no_manifest:
+                self.on_log(f"ℹ ยังไม่พบไฟล์ {MANIFEST_NAME} ใน Update Channel ({self.channel_dir}) "
+                            "— ฝั่งแอดมินอาจยังไม่เคยกด 'เผยแพร่อัพเดท'")
+                self._warned_no_manifest = True
             return
+        self._warned_no_manifest = False
+
         try:
             with open(manifest_path, "r", encoding="utf-8") as f:
                 manifest = json.load(f)
         except Exception:
-            self.on_log("⚠ อ่านไฟล์ manifest.json ไม่ได้ (อาจกำลังถูกเขียนอยู่พอดี)")
+            self.on_log("⚠ อ่านไฟล์ manifest.json ไม่ได้ (อาจกำลังถูกเขียนอยู่พอดี ลองใหม่รอบถัดไป)")
             return
 
         remote_version = manifest.get("version")
         if not remote_version:
+            self.on_log("⚠ ไฟล์ manifest.json ไม่มีข้อมูลเวอร์ชัน (version) จึงข้ามการตรวจสอบรอบนี้")
             return
 
         local_version = self._read_local_version()
+
+        # แจ้ง log เฉพาะตอนที่ค่าที่เจอเปลี่ยนไปจากรอบก่อน กันสแปมข้อความซ้ำ
+        if remote_version != self._last_seen_remote_version:
+            self._last_seen_remote_version = remote_version
+            self.on_log(f"🔎 พบข้อมูลบน Update Channel: เวอร์ชัน {remote_version} "
+                        f"(เครื่องนี้ติดตั้งอยู่เวอร์ชัน {local_version})")
+
         if not _is_newer(remote_version, local_version):
-            return
+            return  # เวอร์ชันบน Update Channel ไม่ได้ใหม่กว่าที่ติดตั้งอยู่ ไม่ต้องเด้งป็อปอัพ
+
         if remote_version in self._dismissed_versions:
-            return
+            return  # ผู้ใช้เพิ่งกด "ไม่ตกลง" กับเวอร์ชันนี้ไปแล้วในรอบก่อนหน้า (session นี้)
+
         if self._popup_open:
             return
 
         package_dir_name = manifest.get("package_dir")
         package_dir = os.path.join(self.channel_dir, package_dir_name) if package_dir_name else None
         if not package_dir or not os.path.isdir(package_dir):
-            self.on_log(f"⚠ พบ manifest เวอร์ชัน {remote_version} แต่ไม่พบไฟล์แพ็กเกจ ({package_dir_name})")
+            self.on_log(f"⚠ พบ manifest เวอร์ชัน {remote_version} แต่ไม่พบโฟลเดอร์แพ็กเกจ ({package_dir_name}) "
+                        "— แพ็กเกจอาจยังก็อปปี้ไม่เสร็จ หรือถูกลบไปแล้ว")
             return
 
+        self.on_log(f"🆕 กำลังแสดงป็อปอัพแจ้งอัพเดทเวอร์ชัน {remote_version}...")
         # ต้องเรียก UI (popup) บนเธรดหลักของ tkinter เท่านั้น
         self.root.after(0, lambda: self._show_update_popup(manifest, package_dir))
 
