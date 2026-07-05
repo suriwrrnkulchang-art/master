@@ -1,0 +1,38 @@
+{
+  "app_name": "SKYFILM Voice Censor1",
+  "version": "1.0.2",
+  "changelog": "67",
+  "published_at": "2026-07-05T07:39:52+00:00",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "14b5d1fb8d41d6a38fb4d9d8612f1d21715abf9d5564870d308e682ec1bab6a2",
+      "raw_url": "https://raw.githubusercontent.com/suriwrrnkulchang-art/master/main/README.md"
+    },
+    {
+      "path": "logo.ico",
+      "sha256": "3d2a77f99c8542de251cc53c71e12ac3b3e90df425cb3a9bb05af4ef53d89d15",
+      "raw_url": "https://raw.githubusercontent.com/suriwrrnkulchang-art/master/main/logo.ico"
+    },
+    {
+      "path": "main.py",
+      "sha256": "85a0dce1ac25f43f744131a46cde75a4fd3fbe4dbb8267160863aa1ea80250d2",
+      "raw_url": "https://raw.githubusercontent.com/suriwrrnkulchang-art/master/main/main.py"
+    },
+    {
+      "path": "main/ auto_update.pyauto_update.pymainauto_update.py",
+      "sha256": "7b86464637823868749af09430d59a7ce6b44d55fa86a37feb8ad2ccd7b7f8aa",
+      "raw_url": "https://raw.githubusercontent.com/suriwrrnkulchang-art/master/main/main/ auto_update.pyauto_update.pymainauto_update.py"
+    },
+    {
+      "path": "main/update_manifest.json",
+      "sha256": "6dc942ec80f1962fe87461b8d5a577f73344eadd232db1b002326c8c9fe87380",
+      "raw_url": "https://raw.githubusercontent.com/suriwrrnkulchang-art/master/main/main/update_manifest.json"
+    },
+    {
+      "path": "main/voice_censor_main.py",
+      "sha256": "8f80555d6cf29e6260875ba50b332689c531014c39094d6fa8ad9c4a8d81965c",
+      "raw_url": "https://raw.githubusercontent.com/suriwrrnkulchang-art/master/main/main/voice_censor_main.py"
+    }
+  ]
+}
