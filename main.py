@@ -4,46 +4,6 @@
 =====================================================================
 โปรแกรมเซ็นเซอร์คำไม่สุภาพแบบเรียลไทม์ (Real-time Profanity Censor)
 เวอร์ชันปรับปรุง: SpeechRecognition + PyAudio (Google Web Speech API)
-
-สิ่งที่เพิ่มจากเวอร์ชันเดิม:
-  - ฟังและตรวจจับคำหยาบแบบต่อเนื่อง (ปรับ pause_threshold / phrase_time_limit
-    ให้สั้นลง) ทำให้พูดต่อเนื่องได้และเซ็นเซอร์ทันเมื่อเจอคำหยาบ แล้วเสียง
-    ปกติหลังจากนั้นจะไม่ถูกเซ็นเซอร์ต่อ (เซ็นเซอร์เฉพาะช่วงที่เจอคำหยาบจริง)
-  - บันทึกค่าที่ตั้งไว้ทั้งหมดอัตโนมัติทันทีที่มีการเปลี่ยนแปลง (ไมโครโฟน,
-    เอาต์พุต, ภาษา, ค่าหน่วงเวลา, ความไว, รายการคำหยาบ ฯลฯ) โดยไม่ต้องกด
-    ปุ่มบันทึกเอง แล้วโหลดค่าที่บันทึกไว้กลับมาอัตโนมัติทุกครั้งที่เปิดโปรแกรม
-  - ระบบเริ่มโปรแกรมอัตโนมัติเมื่อเปิดเครื่อง (Windows) เปิด/ปิดได้จากหน้า
-    "ตั้งค่า" (ใช้ Registry Run key)
-  - ตัวเลือก "เริ่มเซ็นเซอร์ทันทีเมื่อเปิดโปรแกรม" แยกต่างหากจากการเริ่ม
-    โปรแกรมตอนบูตเครื่อง
-  - จัดหมวดหมู่ UI เป็นแท็บ: "อุปกรณ์ & คำหยาบ" และ "ตั้งค่า"
-
-วิธีติดตั้ง (รันใน Command Prompt / Terminal ก่อนเปิดโปรแกรม):
-
-    pip install SpeechRecognition PyAudio numpy soundfile
-
-หมายเหตุการติดตั้ง PyAudio:
-  - Windows: ปกติ "pip install PyAudio" ใช้ได้เลย ถ้าติดตั้งไม่ผ่าน ให้ลอง
-        pip install pipwin
-        pipwin install pyaudio
-  - macOS:  ต้องมี portaudio ก่อน -> brew install portaudio  แล้วค่อย pip install pyaudio
-  - Linux:  sudo apt install portaudio19-dev python3-pyaudio  แล้วค่อย pip install pyaudio
-
-เวอร์ชันนี้ใช้ Google Web Speech API (ฟรี, ผ่าน SpeechRecognition) ในการแปลงเสียงเป็นข้อความ
-ซึ่ง "ต้องต่ออินเทอร์เน็ต" และมีความหน่วง (ต้องรอพูดจบประโยค + ส่งไปประมวลผลที่เซิร์ฟเวอร์)
-มากกว่าการรู้จำเสียงแบบออฟไลน์ ดังนั้นโปรแกรมนี้จะ "หน่วงเสียงเอาต์พุต" ไว้ล่วงหน้าสักครู่
-(ตั้งค่าได้) เพื่อให้มีเวลาพอสำหรับผลลัพธ์จาก Google กลับมาก่อนที่เสียงส่วนนั้นจะถูกส่งออกจริง
-
-ถ้าต้องการส่งเสียงที่เซ็นเซอร์แล้วเข้าไปใช้ใน Discord หรือเกม (ใช้กับแอปอื่นได้):
-    1. ติดตั้งโปรแกรม Virtual Audio Cable ฟรี เช่น "VB-CABLE"
-       (ดาวน์โหลดที่ https://vb-audio.com/Cable/ )
-    2. เปิดโปรแกรมนี้ แล้วเลือก "อุปกรณ์เอาต์พุต (Output)" เป็น "CABLE Input"
-    3. ไปที่ Discord/เกม แล้วตั้งค่าไมโครโฟน (Input Device) ให้เป็น "CABLE Output"
-
-หมายเหตุระบบ "เริ่มอัตโนมัติเมื่อเปิดเครื่อง":
-  - รองรับเฉพาะ Windows (ใช้ Registry: HKEY_CURRENT_USER\\...\\Run)
-  - ถ้ารันเป็นไฟล์ .py ธรรมดา โปรแกรมจะสร้างคำสั่งเรียก pythonw.exe + พาธไฟล์นี้
-  - ถ้าคอมไพล์เป็น .exe (เช่นด้วย PyInstaller) โปรแกรมจะเรียก .exe โดยตรง
 =====================================================================
 """
 
@@ -53,14 +13,12 @@ import json
 import queue
 import threading
 import traceback
+import webbrowser
 from collections import deque
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import ttk, filedialog, messagebox, scrolledtext, font as tkfont
 
-# ---------------------------------------------------------------------------
-# ตรวจสอบไลบรารีที่จำเป็น (import แบบปลอดภัย จะได้แจ้งผู้ใช้ได้ชัดเจนถ้าขาดอะไร)
-# ---------------------------------------------------------------------------
 MISSING_LIBS = []
 
 try:
@@ -84,7 +42,7 @@ except ImportError:
 try:
     import soundfile as sf
 except ImportError:
-    sf = None  # ไม่บังคับ ใช้ได้แค่ฟีเจอร์โหลดไฟล์เสียงกำหนดเอง
+    sf = None
 
 IS_WINDOWS = (os.name == "nt")
 if IS_WINDOWS:
@@ -104,8 +62,8 @@ APP_REG_NAME = "VoiceProfanityCensor"
 STARTUP_REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 SAMPLE_RATE = 16000
-BLOCK_SEC = 0.1                         # ความยาวของแต่ละ block เสียง (วินาที)
-BLOCK_SIZE = int(SAMPLE_RATE * BLOCK_SEC)   # จำนวนตัวอย่างเสียงต่อ block (1600)
+BLOCK_SEC = 0.1
+BLOCK_SIZE = int(SAMPLE_RATE * BLOCK_SEC)
 
 LANGUAGE_OPTIONS = [
     ("ไทย (th-TH)", "th-TH"),
@@ -118,8 +76,8 @@ DEFAULT_SETTINGS = {
     "mute_seconds": 2.5,
     "out_channels": 2,
     "language": "th-TH",
-    "pause_threshold": 0.5,      # ยิ่งน้อย ยิ่งตัดประโยคเร็ว = ตรวจจับต่อเนื่องขึ้น
-    "phrase_time_limit": 4.0,    # ความยาวสูงสุดต่อประโยคที่ส่งไปรู้จำ
+    "pause_threshold": 0.5,
+    "phrase_time_limit": 4.0,
     "input_device_index": None,
     "input_device_name": "",
     "output_device_index": None,
@@ -128,14 +86,33 @@ DEFAULT_SETTINGS = {
     "auto_start_engine": False,
 }
 
+APP_NAME = "SKYFILM Voice Censor"
+APP_VERSION = "Beta 1.0 (ทดสอบใช้งาน)"
+APP_AUTHOR = "SKYFILM"
+CONTACT_URL = "https://linktr.ee/ken_kenpaw?utm_source=linktree_profile_share&ltsid=067166a7-2967-4b99-8ad9-2775d0e0b2f7"
+ABOUT_TEXT = (
+    "โปรแกรมนี้เป็นโปรแกรมของคนไทย ที่จัดทำขึ้นโดย SKYFILM เป็นคนไทย 100%\n\n"
+    "โปรแกรมนี้ใช้ในการตรวจจับคำไม่สุภาพ เมื่อตรวจพบคำไม่สุภาพ จะเซ็นเซอร์คำนั้นทันที\n"
+    "ใช้ในการป้องกันแบนของ Roblox ก็ยังดีกว่าไม่มี\n\n"
+    "เวอร์ชันนี้เป็นเวอร์ชันเบต้า หรือทดสอบใช้"
+)
 
-# ===========================================================================
-# ระบบเริ่มโปรแกรมอัตโนมัติเมื่อเปิดเครื่อง (Windows Registry Run key)
-# ===========================================================================
+# ---------------------------------------------------------------------------
+# ธีมสี (Design tokens)
+# ---------------------------------------------------------------------------
+COLOR_BG = "#101820"
+COLOR_PANEL = "#182430"
+COLOR_PANEL_ALT = "#1f2e3c"
+COLOR_ACCENT = "#3ddc97"
+COLOR_ACCENT_DARK = "#25a877"
+COLOR_TEXT = "#e7edf3"
+COLOR_TEXT_MUTED = "#93a2b3"
+COLOR_DANGER = "#ff6b6b"
+COLOR_BORDER = "#2a3947"
+
+
 def _startup_command():
-    """สร้างคำสั่งที่จะใช้เรียกโปรแกรมนี้ตอนเปิดเครื่อง"""
     if getattr(sys, "frozen", False):
-        # กรณีถูกคอมไพล์เป็น .exe ด้วย PyInstaller เป็นต้น
         return f'"{sys.executable}"'
     exe = sys.executable
     pythonw = exe.replace("python.exe", "pythonw.exe")
@@ -177,30 +154,17 @@ def is_windows_startup_enabled():
         return False
 
 
-# ===========================================================================
-# ส่วนประมวลผลเสียง / ตรวจจับคำ (Engine)
-# ===========================================================================
 class CensorEngine:
-    """
-    ทำงาน 2 อย่างคู่ขนานกัน:
-      1) Passthrough: อ่านเสียงจากไมค์ -> หน่วงเวลาไว้ในบัฟเฟอร์ -> ส่งออกไปยังอุปกรณ์เอาต์พุต
-         (ใช้ PyAudio stream สองเส้นทาง คือ input stream กับ output stream)
-      2) Recognition: ใช้ SpeechRecognition (sr.Microphone + listen_in_background)
-         ฟังเสียงจากไมค์ตัวเดียวกัน (เปิดอีก stream หนึ่งแยกต่างหาก) ส่งไป Google Web Speech API
-         พอได้ข้อความ ตรวจว่ามีคำไม่สุภาพไหม ถ้ามี -> สั่งให้ engine ข้อ 1 เซ็นเซอร์เสียงย้อนหลัง
-         เฉพาะช่วงที่เจอคำหยาบเท่านั้น ส่วนคำถัดไปที่ไม่หยาบจะไม่ถูกเซ็นเซอร์ต่อ
-    """
-
     def __init__(self, log_fn):
         self.log = log_fn
         self.running = False
 
-        self.pa = None                      # pyaudio.PyAudio() instance
+        self.pa = None
         self.in_stream = None
         self.out_stream = None
 
         self.buffer_lock = threading.Lock()
-        self.delay_buffer = deque()         # เก็บ numpy int16 array (1 block ต่อ 1 ก้อน)
+        self.delay_buffer = deque()
         self.delay_blocks = 40
 
         self.out_channels = 2
@@ -212,25 +176,21 @@ class CensorEngine:
         self.pause_threshold = 0.5
         self.phrase_time_limit = 4.0
 
-        self.censor_wave = self._generate_beep()   # numpy int16 array
+        self.censor_wave = self._generate_beep()
         self.censor_file_path = None
 
-        # ---- นับสถิติ ----
         self.total_words_detected = 0
 
-        # ส่วนของ speech_recognition
         self.recognizer = None
         self.mic_source = None
         self.stop_listening_fn = None
 
-    # ---------------- เสียงปี๊บ default ----------------
     def _generate_beep(self, freq=1000.0, duration=0.35, volume=0.55):
         t = np.linspace(0, duration, int(SAMPLE_RATE * duration), endpoint=False)
         wave_data = (volume * np.sin(2 * np.pi * freq * t) * 32767).astype(np.int16)
         return wave_data
 
     def load_censor_file(self, path):
-        """โหลดไฟล์เสียงที่ผู้ใช้เลือกมาใช้เป็นเสียงเซ็นเซอร์ (รองรับ wav/flac/ogg ผ่าน soundfile)"""
         if sf is None:
             raise RuntimeError("ต้องติดตั้งไลบรารี soundfile ก่อน (pip install soundfile)")
         data, orig_sr = sf.read(path, dtype="float32", always_2d=False)
@@ -253,7 +213,6 @@ class CensorEngine:
         return np.interp(x_new, x_old, data).astype(np.float32)
 
     def preview_censor_sound(self):
-        """เล่นเสียงตัวอย่างเซ็นเซอร์ผ่านลำโพง default (ใช้ pyaudio ชั่วคราว)"""
         pa = pyaudio.PyAudio()
         try:
             stream = pa.open(format=pyaudio.paInt16, channels=1, rate=SAMPLE_RATE, output=True)
@@ -271,14 +230,10 @@ class CensorEngine:
         tiled = np.tile(wave_arr, reps)[:num_samples]
         return tiled.astype(np.int16)
 
-    # ---------------- คำไม่สุภาพ ----------------
     def set_bad_words(self, words):
         self.bad_words = [w.strip() for w in words if w.strip()]
 
-    # ---------------- เซ็นเซอร์เสียงย้อนหลังในบัฟเฟอร์ ----------------
     def censor_recent(self, seconds):
-        """เซ็นเซอร์เฉพาะช่วงเวลาล่าสุด (ที่ตรงกับตอนพูดคำหยาบ) เท่านั้น
-        เสียงก่อนหน้าและหลังจากนี้ (คำที่ไม่หยาบ) จะไม่โดนเซ็นเซอร์ต่อ"""
         blocks_to_mute = max(1, int(round(seconds / BLOCK_SEC)))
         with self.buffer_lock:
             items = list(self.delay_buffer)
@@ -296,7 +251,6 @@ class CensorEngine:
             self.delay_buffer.clear()
             self.delay_buffer.extend(items)
 
-    # ---------------- ตรวจข้อความว่ามีคำไม่สุภาพไหม ----------------
     def _check_text(self, text):
         if not text:
             return
@@ -313,7 +267,6 @@ class CensorEngine:
             self.log(f"⚠ ตรวจพบคำไม่สุภาพ [{', '.join(hit_words)}] -> เซ็นเซอร์ย้อนหลัง {self.mute_seconds:.1f} วิ")
             self.censor_recent(self.mute_seconds)
 
-    # ---------------- PyAudio callbacks (ทำงานบน audio thread ของ PortAudio) ----------------
     def _input_callback(self, in_data, frame_count, time_info, status):
         try:
             arr = np.frombuffer(in_data, dtype=np.int16).copy()
@@ -350,7 +303,6 @@ class CensorEngine:
             silence = np.zeros(frame_count * self.out_channels, dtype=np.int16)
             return (silence.tobytes(), pyaudio.paContinue)
 
-    # ---------------- speech_recognition callback (ทำงานบน thread ที่ library สร้างให้) ----------------
     def _on_phrase_recognized(self, recognizer, audio):
         if not self.running:
             return
@@ -359,13 +311,12 @@ class CensorEngine:
             self.log(f"🎤 ได้ยิน: {text}")
             self._check_text(text)
         except sr.UnknownValueError:
-            pass  # ฟังไม่ออก/เงียบ ไม่ต้อง log กันรก
+            pass
         except sr.RequestError as e:
             self.log(f"เชื่อมต่อ Google Speech API ไม่ได้ (เช็คอินเทอร์เน็ต): {e}")
         except Exception:
             self.log("เกิดข้อผิดพลาดขณะรู้จำเสียง:\n" + traceback.format_exc())
 
-    # ---------------- start / stop ----------------
     def start(self, input_device, output_device, delay_seconds, mute_seconds,
               out_channels, language, pause_threshold=0.5, phrase_time_limit=4.0):
         if pyaudio is None or sr is None:
@@ -408,9 +359,6 @@ class CensorEngine:
             self._safe_close_streams()
             raise
 
-        # ---- ตั้งค่า speech_recognition (เปิดไมค์ตัวเดียวกันอีก 1 stream แยกต่างหาก) ----
-        # ปรับ pause_threshold / non_speaking_duration ให้สั้นลงเพื่อให้ตัดประโยค
-        # เร็วขึ้น รองรับการพูดต่อเนื่อง และตรวจจับคำหยาบได้ไวขึ้น
         try:
             self.recognizer = sr.Recognizer()
             self.recognizer.dynamic_energy_threshold = True
@@ -457,23 +405,22 @@ class CensorEngine:
         self._safe_close_streams()
 
 
-# ===========================================================================
-# ส่วน UI (Tkinter)
-# ===========================================================================
 class CensorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("โปรแกรมเซ็นเซอร์คำไม่สุภาพแบบเรียลไทม์ (SpeechRecognition + PyAudio)")
-        self.root.geometry("800x740")
-        self.root.minsize(740, 680)
+        self.root.title(f"{APP_NAME} — เซ็นเซอร์คำไม่สุภาพแบบเรียลไทม์")
+        self.root.geometry("860x760")
+        self.root.minsize(780, 700)
+        self.root.configure(bg=COLOR_BG)
 
-        self._loading = True  # กันไม่ให้ trace callback เซฟทับตอนกำลังโหลดค่า
+        self._loading = True
 
         self.log_queue = queue.Queue()
         self.engine = CensorEngine(log_fn=lambda msg: self.log_queue.put(msg))
 
         self.settings = dict(DEFAULT_SETTINGS)
 
+        self._setup_style()
         self._build_ui()
         self._load_bad_words()
         self._load_settings()
@@ -492,65 +439,149 @@ class CensorApp:
                 + "pip install " + " ".join(MISSING_LIBS)
             )
 
-        # ถ้าตั้งค่าไว้ให้เริ่มเซ็นเซอร์ทันทีที่เปิดโปรแกรม
         if self.settings.get("auto_start_engine") and not MISSING_LIBS:
             self.root.after(1200, self._start)
 
+    # ---------------------------------------------------------- ธีม / สไตล์ ---
+    def _setup_style(self):
+        default_font_family = "Tahoma" if IS_WINDOWS else "Helvetica"
+        self.font_base = tkfont.Font(family=default_font_family, size=10)
+        self.font_header = tkfont.Font(family=default_font_family, size=18, weight="bold")
+        self.font_subheader = tkfont.Font(family=default_font_family, size=12, weight="bold")
+        self.font_link = tkfont.Font(family=default_font_family, size=11, underline=1)
+        self.root.option_add("*Font", self.font_base)
+
+        style = ttk.Style(self.root)
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+
+        style.configure(".", background=COLOR_BG, foreground=COLOR_TEXT,
+                         fieldbackground=COLOR_PANEL_ALT, bordercolor=COLOR_BORDER,
+                         font=self.font_base)
+        style.configure("TFrame", background=COLOR_BG)
+        style.configure("Card.TFrame", background=COLOR_PANEL)
+        style.configure("TLabel", background=COLOR_BG, foreground=COLOR_TEXT)
+        style.configure("Card.TLabel", background=COLOR_PANEL, foreground=COLOR_TEXT)
+        style.configure("Muted.TLabel", background=COLOR_BG, foreground=COLOR_TEXT_MUTED)
+        style.configure("CardMuted.TLabel", background=COLOR_PANEL, foreground=COLOR_TEXT_MUTED)
+        style.configure("Header.TLabel", background=COLOR_BG, foreground=COLOR_ACCENT,
+                         font=self.font_header)
+        style.configure("SubHeader.TLabel", background=COLOR_PANEL, foreground=COLOR_ACCENT,
+                         font=self.font_subheader)
+        style.configure("Danger.TLabel", background=COLOR_PANEL, foreground=COLOR_DANGER)
+
+        style.configure("TLabelframe", background=COLOR_PANEL, bordercolor=COLOR_BORDER,
+                         darkcolor=COLOR_PANEL, lightcolor=COLOR_PANEL, relief="solid")
+        style.configure("TLabelframe.Label", background=COLOR_PANEL, foreground=COLOR_ACCENT,
+                         font=self.font_subheader)
+
+        style.configure("TNotebook", background=COLOR_BG, bordercolor=COLOR_BG)
+        style.configure("TNotebook.Tab", background=COLOR_PANEL_ALT, foreground=COLOR_TEXT_MUTED,
+                         padding=(16, 8), font=self.font_base)
+        style.map("TNotebook.Tab",
+                  background=[("selected", COLOR_ACCENT)],
+                  foreground=[("selected", "#062018")])
+
+        style.configure("TButton", background=COLOR_PANEL_ALT, foreground=COLOR_TEXT,
+                         padding=(10, 6), relief="flat", borderwidth=0)
+        style.map("TButton", background=[("active", COLOR_BORDER)])
+
+        style.configure("Accent.TButton", background=COLOR_ACCENT, foreground="#062018",
+                         padding=(14, 8), relief="flat", font=(default_font_family, 10, "bold"))
+        style.map("Accent.TButton", background=[("active", COLOR_ACCENT_DARK), ("disabled", COLOR_BORDER)])
+
+        style.configure("Stop.TButton", background=COLOR_DANGER, foreground="#2a0a0a",
+                         padding=(14, 8), relief="flat", font=(default_font_family, 10, "bold"))
+        style.map("Stop.TButton", background=[("active", "#e05555"), ("disabled", COLOR_BORDER)])
+
+        style.configure("TEntry", fieldbackground=COLOR_PANEL_ALT, foreground=COLOR_TEXT,
+                         insertcolor=COLOR_TEXT, bordercolor=COLOR_BORDER)
+        style.configure("TSpinbox", fieldbackground=COLOR_PANEL_ALT, foreground=COLOR_TEXT,
+                         background=COLOR_PANEL_ALT, bordercolor=COLOR_BORDER, arrowsize=14)
+        style.configure("TCombobox", fieldbackground=COLOR_PANEL_ALT, foreground=COLOR_TEXT,
+                         background=COLOR_PANEL_ALT, bordercolor=COLOR_BORDER)
+        style.map("TCombobox", fieldbackground=[("readonly", COLOR_PANEL_ALT)],
+                  foreground=[("readonly", COLOR_TEXT)])
+
+        style.configure("TCheckbutton", background=COLOR_PANEL, foreground=COLOR_TEXT)
+        style.map("TCheckbutton", background=[("active", COLOR_PANEL)])
+
+        style.configure("Vertical.TScrollbar", background=COLOR_PANEL_ALT, troughcolor=COLOR_BG,
+                         bordercolor=COLOR_BG, arrowcolor=COLOR_TEXT_MUTED)
+
     # ---------------------------------------------------------------- UI ---
     def _build_ui(self):
-        pad = {"padx": 8, "pady": 6}
+        pad = {"padx": 10, "pady": 6}
 
-        # ---- ปุ่มเริ่ม/หยุด + สถานะ (อยู่บนสุด เห็นตลอด ไม่ว่าจะสลับแท็บไหน) ----
-        control_frame = ttk.Frame(self.root)
-        control_frame.pack(fill="x", **pad)
+        header = tk.Frame(self.root, bg=COLOR_BG)
+        header.pack(fill="x", padx=14, pady=(14, 4))
+        ttk.Label(header, text=f"🛡  {APP_NAME}", style="Header.TLabel").pack(side="left")
+        ttk.Label(header, text=f"  {APP_VERSION}", style="Muted.TLabel").pack(side="left", pady=(8, 0))
 
-        self.start_btn = ttk.Button(control_frame, text="▶ เริ่มทำงาน", command=self._start)
-        self.start_btn.pack(side="left", padx=6)
-        self.stop_btn = ttk.Button(control_frame, text="■ หยุด", command=self._stop, state="disabled")
-        self.stop_btn.pack(side="left", padx=6)
+        control_frame = tk.Frame(self.root, bg=COLOR_PANEL, highlightbackground=COLOR_BORDER,
+                                  highlightthickness=1)
+        control_frame.pack(fill="x", padx=14, pady=(4, 8))
 
-        self.status_var = tk.StringVar(value="สถานะ: หยุดทำงาน")
-        ttk.Label(control_frame, textvariable=self.status_var, foreground="#0a5").pack(side="left", padx=16)
+        inner = ttk.Frame(control_frame, style="Card.TFrame")
+        inner.pack(fill="x", padx=10, pady=10)
 
-        # ---- แท็บหมวดหมู่ ----
+        self.start_btn = ttk.Button(inner, text="▶  เริ่มทำงาน", style="Accent.TButton", command=self._start)
+        self.start_btn.pack(side="left", padx=(0, 8))
+        self.stop_btn = ttk.Button(inner, text="■  หยุด", style="Stop.TButton", command=self._stop, state="disabled")
+        self.stop_btn.pack(side="left", padx=8)
+
+        self.status_dot = tk.Canvas(inner, width=14, height=14, bg=COLOR_PANEL, highlightthickness=0)
+        self.status_dot.pack(side="left", padx=(20, 6))
+        self._status_circle = self.status_dot.create_oval(2, 2, 12, 12, fill=COLOR_TEXT_MUTED, outline="")
+
+        self.status_var = tk.StringVar(value="หยุดทำงาน")
+        ttk.Label(inner, textvariable=self.status_var, style="Card.TLabel",
+                  font=self.font_subheader).pack(side="left")
+
         self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill="both", expand=True, **pad)
+        self.notebook.pack(fill="both", expand=True, padx=14, pady=(0, 14))
 
-        tab_main = ttk.Frame(self.notebook)
-        tab_settings = ttk.Frame(self.notebook)
-        self.notebook.add(tab_main, text="อุปกรณ์ & คำหยาบ")
-        self.notebook.add(tab_settings, text="⚙ ตั้งค่า")
+        tab_main = ttk.Frame(self.notebook, style="TFrame")
+        tab_settings = ttk.Frame(self.notebook, style="TFrame")
+        tab_about = ttk.Frame(self.notebook, style="TFrame")
+        self.notebook.add(tab_main, text="🎚  อุปกรณ์ & คำหยาบ")
+        self.notebook.add(tab_settings, text="⚙  ตั้งค่า")
+        self.notebook.add(tab_about, text="ℹ️  เกี่ยวกับ")
 
         # =========================== TAB 1: อุปกรณ์ & คำหยาบ ===========================
         dev_frame = ttk.LabelFrame(tab_main, text="อุปกรณ์เสียง")
         dev_frame.pack(fill="x", **pad)
 
-        ttk.Label(dev_frame, text="ไมโครโฟน (Input):").grid(row=0, column=0, sticky="w", padx=6, pady=4)
+        ttk.Label(dev_frame, text="ไมโครโฟน (Input):", style="Card.TLabel").grid(row=0, column=0, sticky="w", padx=6, pady=4)
         self.input_combo = ttk.Combobox(dev_frame, state="readonly", width=55)
         self.input_combo.grid(row=0, column=1, padx=6, pady=4, sticky="we")
 
-        ttk.Label(dev_frame, text="เอาต์พุต (Output / Virtual Cable):").grid(row=1, column=0, sticky="w", padx=6, pady=4)
+        ttk.Label(dev_frame, text="เอาต์พุต (Output / Virtual Cable):", style="Card.TLabel").grid(row=1, column=0, sticky="w", padx=6, pady=4)
         self.output_combo = ttk.Combobox(dev_frame, state="readonly", width=55)
         self.output_combo.grid(row=1, column=1, padx=6, pady=4, sticky="we")
 
-        ttk.Button(dev_frame, text="รีเฟรชอุปกรณ์", command=lambda: self._refresh_devices(select_saved=False)).grid(row=0, column=2, rowspan=2, padx=6)
-        ttk.Label(dev_frame, text="(อุปกรณ์ที่เลือกจะถูกจดจำอัตโนมัติในครั้งถัดไป)", foreground="#888").grid(row=2, column=0, columnspan=3, sticky="w", padx=6)
+        ttk.Button(dev_frame, text="🔄 รีเฟรชอุปกรณ์", command=lambda: self._refresh_devices(select_saved=False)).grid(row=0, column=2, rowspan=2, padx=6)
+        ttk.Label(dev_frame, text="(อุปกรณ์ที่เลือกจะถูกจดจำอัตโนมัติในครั้งถัดไป)", style="CardMuted.TLabel").grid(row=2, column=0, columnspan=3, sticky="w", padx=6)
         dev_frame.columnconfigure(1, weight=1)
 
-        # ---- รายการคำไม่สุภาพ ----
         words_frame = ttk.LabelFrame(tab_main, text="รายการคำที่ต้องการเซ็นเซอร์ (บันทึกอัตโนมัติทุกครั้งที่แก้ไข)")
         words_frame.pack(fill="both", expand=True, **pad)
 
-        list_container = ttk.Frame(words_frame)
+        list_container = ttk.Frame(words_frame, style="Card.TFrame")
         list_container.pack(side="left", fill="both", expand=True, padx=(6, 0), pady=6)
 
-        self.words_listbox = tk.Listbox(list_container, height=10)
+        self.words_listbox = tk.Listbox(list_container, height=10, bg=COLOR_PANEL_ALT, fg=COLOR_TEXT,
+                                         selectbackground=COLOR_ACCENT, selectforeground="#062018",
+                                         highlightthickness=1, highlightbackground=COLOR_BORDER,
+                                         relief="flat", borderwidth=0)
         self.words_listbox.pack(side="left", fill="both", expand=True)
         scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=self.words_listbox.yview)
         scrollbar.pack(side="right", fill="y")
         self.words_listbox.config(yscrollcommand=scrollbar.set)
 
-        btn_col = ttk.Frame(words_frame)
+        btn_col = ttk.Frame(words_frame, style="Card.TFrame")
         btn_col.pack(side="left", fill="y", padx=6, pady=6)
 
         self.new_word_var = tk.StringVar()
@@ -558,43 +589,43 @@ class CensorApp:
         entry.pack(pady=(0, 4))
         entry.bind("<Return>", lambda e: self._add_word())
 
-        ttk.Button(btn_col, text="เพิ่มคำ", command=self._add_word).pack(fill="x", pady=2)
-        ttk.Button(btn_col, text="ลบคำที่เลือก", command=self._remove_word).pack(fill="x", pady=2)
+        ttk.Button(btn_col, text="➕ เพิ่มคำ", style="Accent.TButton", command=self._add_word).pack(fill="x", pady=2)
+        ttk.Button(btn_col, text="🗑 ลบคำที่เลือก", command=self._remove_word).pack(fill="x", pady=2)
         ttk.Label(btn_col, text="(ทุกคำในรายการนี้\nจะถูกแบน/เซ็นเซอร์\nทุกครั้งที่พูด)",
-                  foreground="#a55", justify="left").pack(pady=(12, 2))
+                  style="Danger.TLabel", justify="left").pack(pady=(12, 2))
 
         # =========================== TAB 2: ตั้งค่า ===========================
         rec_frame = ttk.LabelFrame(tab_settings, text="การรู้จำเสียง (Google Web Speech API)")
         rec_frame.pack(fill="x", **pad)
 
-        ttk.Label(rec_frame, text="ภาษา:").grid(row=0, column=0, sticky="w", padx=6, pady=4)
+        ttk.Label(rec_frame, text="ภาษา:", style="Card.TLabel").grid(row=0, column=0, sticky="w", padx=6, pady=4)
         self.lang_combo = ttk.Combobox(rec_frame, state="readonly", width=25,
                                         values=[lbl for lbl, code in LANGUAGE_OPTIONS])
         self.lang_combo.current(0)
         self.lang_combo.grid(row=0, column=1, sticky="w", padx=6, pady=4)
-        ttk.Label(rec_frame, text="(ต้องต่ออินเทอร์เน็ต)", foreground="#888").grid(row=0, column=2, sticky="w")
+        ttk.Label(rec_frame, text="(ต้องต่ออินเทอร์เน็ต)", style="CardMuted.TLabel").grid(row=0, column=2, sticky="w")
 
         cfg_frame = ttk.LabelFrame(tab_settings, text="ตั้งค่าการเซ็นเซอร์ / ความไวการตรวจจับ")
         cfg_frame.pack(fill="x", **pad)
 
-        ttk.Label(cfg_frame, text="หน่วงเสียงทั้งหมด (วินาที):").grid(row=0, column=0, sticky="w", padx=6, pady=4)
+        ttk.Label(cfg_frame, text="หน่วงเสียงทั้งหมด (วินาที):", style="Card.TLabel").grid(row=0, column=0, sticky="w", padx=6, pady=4)
         self.delay_var = tk.DoubleVar(value=4.0)
         ttk.Spinbox(cfg_frame, from_=1.0, to=10.0, increment=0.5, textvariable=self.delay_var, width=8).grid(row=0, column=1, sticky="w", padx=6)
 
-        ttk.Label(cfg_frame, text="เซ็นเซอร์ย้อนหลังเมื่อเจอคำ (วินาที):").grid(row=0, column=2, sticky="w", padx=6, pady=4)
+        ttk.Label(cfg_frame, text="เซ็นเซอร์ย้อนหลังเมื่อเจอคำ (วินาที):", style="Card.TLabel").grid(row=0, column=2, sticky="w", padx=6, pady=4)
         self.mute_var = tk.DoubleVar(value=2.5)
         ttk.Spinbox(cfg_frame, from_=0.5, to=8.0, increment=0.5, textvariable=self.mute_var, width=8).grid(row=0, column=3, sticky="w", padx=6)
 
-        ttk.Label(cfg_frame, text="ช่องสัญญาณเอาต์พุต:").grid(row=1, column=0, sticky="w", padx=6, pady=4)
+        ttk.Label(cfg_frame, text="ช่องสัญญาณเอาต์พุต:", style="Card.TLabel").grid(row=1, column=0, sticky="w", padx=6, pady=4)
         self.channels_var = tk.IntVar(value=2)
         ttk.Combobox(cfg_frame, state="readonly", width=6, textvariable=self.channels_var,
                      values=[1, 2]).grid(row=1, column=1, sticky="w", padx=6)
 
-        ttk.Label(cfg_frame, text="ความไวตัดประโยค (วินาที, ยิ่งน้อยยิ่งต่อเนื่อง/ไว):").grid(row=1, column=2, sticky="w", padx=6, pady=4)
+        ttk.Label(cfg_frame, text="ความไวตัดประโยค (วินาที, ยิ่งน้อยยิ่งต่อเนื่อง/ไว):", style="Card.TLabel").grid(row=1, column=2, sticky="w", padx=6, pady=4)
         self.pause_var = tk.DoubleVar(value=0.5)
         ttk.Spinbox(cfg_frame, from_=0.2, to=1.5, increment=0.1, textvariable=self.pause_var, width=8).grid(row=1, column=3, sticky="w", padx=6)
 
-        ttk.Label(cfg_frame, text="ความยาวประโยคสูงสุด (วินาที):").grid(row=2, column=0, sticky="w", padx=6, pady=4)
+        ttk.Label(cfg_frame, text="ความยาวประโยคสูงสุด (วินาที):", style="Card.TLabel").grid(row=2, column=0, sticky="w", padx=6, pady=4)
         self.phrase_var = tk.DoubleVar(value=4.0)
         ttk.Spinbox(cfg_frame, from_=2.0, to=10.0, increment=0.5, textvariable=self.phrase_var, width=8).grid(row=2, column=1, sticky="w", padx=6)
 
@@ -602,18 +633,16 @@ class CensorApp:
                 "ส่งเสียงไปประมวลผลออนไลน์แล้วได้ผลกลับมา ถ้าเซ็นเซอร์ไม่ทันให้เพิ่มค่านี้\n"
                 "ส่วน 'ความไวตัดประโยค' ยิ่งตั้งน้อย ระบบจะตัดคำ/ประโยคให้ไปตรวจสอบเร็วขึ้น\n"
                 "ทำให้พูดต่อเนื่องได้ลื่นและตรวจจับคำหยาบได้ไวขึ้น แต่ถ้าน้อยเกินไปอาจตัดคำผิดจังหวะ")
-        ttk.Label(cfg_frame, text=note, foreground="#a55", justify="left").grid(row=3, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 4))
+        ttk.Label(cfg_frame, text=note, style="Danger.TLabel", justify="left").grid(row=3, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 4))
 
-        # ---- ไฟล์เสียงเซ็นเซอร์ ----
         sound_frame = ttk.LabelFrame(tab_settings, text="เสียงที่ใช้เซ็นเซอร์ (ค่าเริ่มต้น = เสียงปี๊บ)")
         sound_frame.pack(fill="x", **pad)
         self.sound_path_var = tk.StringVar(value="(ใช้เสียงปี๊บมาตรฐาน)")
-        ttk.Label(sound_frame, textvariable=self.sound_path_var, foreground="#444").pack(side="left", padx=6, fill="x", expand=True)
-        ttk.Button(sound_frame, text="ทดสอบเล่นเสียง", command=self._preview_sound).pack(side="right", padx=6, pady=6)
-        ttk.Button(sound_frame, text="เลือกไฟล์เสียง...", command=self._choose_sound_file).pack(side="right", padx=6, pady=6)
-        ttk.Button(sound_frame, text="ใช้เสียงปี๊บ default", command=self._use_default_beep).pack(side="right", padx=6, pady=6)
+        ttk.Label(sound_frame, textvariable=self.sound_path_var, style="CardMuted.TLabel").pack(side="left", padx=6, fill="x", expand=True)
+        ttk.Button(sound_frame, text="🔊 ทดสอบเล่นเสียง", command=self._preview_sound).pack(side="right", padx=6, pady=6)
+        ttk.Button(sound_frame, text="📂 เลือกไฟล์เสียง...", command=self._choose_sound_file).pack(side="right", padx=6, pady=6)
+        ttk.Button(sound_frame, text="↺ ใช้เสียงปี๊บ default", command=self._use_default_beep).pack(side="right", padx=6, pady=6)
 
-        # ---- เริ่มอัตโนมัติ ----
         startup_frame = ttk.LabelFrame(tab_settings, text="การเริ่มทำงานอัตโนมัติ")
         startup_frame.pack(fill="x", **pad)
 
@@ -627,7 +656,7 @@ class CensorApp:
         win_chk.pack(anchor="w", padx=6, pady=(6, 2))
         if not IS_WINDOWS:
             win_chk.config(state="disabled")
-            ttk.Label(startup_frame, text="(รองรับเฉพาะ Windows)", foreground="#888").pack(anchor="w", padx=26)
+            ttk.Label(startup_frame, text="(รองรับเฉพาะ Windows)", style="CardMuted.TLabel").pack(anchor="w", padx=26)
 
         self.auto_engine_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
@@ -637,11 +666,75 @@ class CensorApp:
             command=self._save_settings,
         ).pack(anchor="w", padx=6, pady=(2, 6))
 
-        # ---- log ----
         log_frame = ttk.LabelFrame(tab_settings, text="บันทึกการทำงาน")
         log_frame.pack(fill="both", expand=True, **pad)
-        self.log_box = scrolledtext.ScrolledText(log_frame, height=8, state="disabled", wrap="word")
+        self.log_box = scrolledtext.ScrolledText(log_frame, height=8, state="disabled", wrap="word",
+                                                  bg=COLOR_PANEL_ALT, fg=COLOR_TEXT,
+                                                  insertbackground=COLOR_TEXT,
+                                                  relief="flat", borderwidth=0)
         self.log_box.pack(fill="both", expand=True, padx=6, pady=6)
+
+        # =========================== TAB 3: เกี่ยวกับ ===========================
+        self._build_about_tab(tab_about)
+
+    def _build_about_tab(self, parent):
+        pad = {"padx": 10, "pady": 8}
+
+        card = ttk.Frame(parent, style="Card.TFrame")
+        card.pack(fill="both", expand=True, padx=16, pady=16)
+
+        inner = ttk.Frame(card, style="Card.TFrame")
+        inner.pack(fill="both", expand=True, padx=24, pady=24)
+
+        ttk.Label(inner, text=f"🛡  {APP_NAME}", style="SubHeader.TLabel",
+                  font=self.font_header).pack(anchor="w")
+        ttk.Label(inner, text=f"เวอร์ชัน: {APP_VERSION}", style="CardMuted.TLabel").pack(anchor="w", pady=(2, 16))
+
+        sep1 = tk.Frame(inner, bg=COLOR_BORDER, height=1)
+        sep1.pack(fill="x", pady=(0, 16))
+
+        about_label = tk.Label(
+            inner, text=ABOUT_TEXT, justify="left", anchor="w", wraplength=560,
+            bg=COLOR_PANEL, fg=COLOR_TEXT, font=self.font_base,
+        )
+        about_label.pack(fill="x", anchor="w", pady=(0, 20))
+
+        sep2 = tk.Frame(inner, bg=COLOR_BORDER, height=1)
+        sep2.pack(fill="x", pady=(0, 16))
+
+        ttk.Label(inner, text="ติดต่อ / ช่องทางโซเชียล", style="SubHeader.TLabel").pack(anchor="w", pady=(0, 8))
+
+        link_row = ttk.Frame(inner, style="Card.TFrame")
+        link_row.pack(anchor="w", fill="x")
+
+        link_label = tk.Label(
+            link_row, text="🔗  " + CONTACT_URL, fg=COLOR_ACCENT, bg=COLOR_PANEL,
+            font=self.font_link, cursor="hand2", wraplength=560, justify="left", anchor="w",
+        )
+        link_label.pack(side="left", fill="x", expand=True)
+        link_label.bind("<Button-1>", lambda e: self._open_link(CONTACT_URL))
+        link_label.bind("<Enter>", lambda e: link_label.config(fg=COLOR_ACCENT_DARK))
+        link_label.bind("<Leave>", lambda e: link_label.config(fg=COLOR_ACCENT))
+
+        ttk.Button(inner, text="📋 คัดลอกลิงก์", command=lambda: self._copy_to_clipboard(CONTACT_URL)).pack(
+            anchor="w", pady=(10, 0))
+
+        ttk.Label(inner, text=f"© {APP_AUTHOR} — สงวนลิขสิทธิ์", style="CardMuted.TLabel").pack(
+            anchor="w", pady=(28, 0))
+
+    def _open_link(self, url):
+        try:
+            webbrowser.open(url, new=2)
+        except Exception as e:
+            messagebox.showerror("เปิดลิงก์ไม่สำเร็จ", str(e))
+
+    def _copy_to_clipboard(self, text):
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.log("คัดลอกลิงก์ติดต่อไปยังคลิปบอร์ดแล้ว")
+        except Exception as e:
+            messagebox.showerror("คัดลอกไม่สำเร็จ", str(e))
 
     # ------------------------------------------------------------ helpers --
     def log(self, msg):
@@ -659,7 +752,6 @@ class CensorApp:
             pass
         self.root.after(100, self._poll_log)
 
-    # ---- บันทึกอัตโนมัติทุกครั้งที่มีการเปลี่ยนค่าใด ๆ ----
     def _bind_autosave(self):
         self.input_combo.bind("<<ComboboxSelected>>", lambda e: self._save_settings())
         self.output_combo.bind("<<ComboboxSelected>>", lambda e: self._save_settings())
@@ -745,7 +837,6 @@ class CensorApp:
         except Exception as e:
             messagebox.showerror("เล่นเสียงไม่ได้", str(e))
 
-    # ---- คำไม่สุภาพ (บันทึกอัตโนมัติทุกครั้งที่เพิ่ม/ลบ) ----
     def _load_bad_words(self):
         words = []
         if os.path.exists(WORDS_FILE):
@@ -789,7 +880,6 @@ class CensorApp:
         self._save_bad_words()
         self.log("ลบคำที่เลือกและบันทึกอัตโนมัติแล้ว")
 
-    # ---- เริ่มโปรแกรมอัตโนมัติเมื่อเปิดเครื่อง ----
     def _toggle_windows_startup(self):
         enable = self.auto_win_var.get()
         try:
@@ -802,7 +892,6 @@ class CensorApp:
             return
         self._save_settings()
 
-    # ---- settings (โหลด / บันทึกอัตโนมัติ) ----
     def _load_settings(self):
         s = dict(DEFAULT_SETTINGS)
         if os.path.exists(SETTINGS_FILE):
@@ -827,7 +916,6 @@ class CensorApp:
                 break
 
         self.auto_engine_var.set(bool(s.get("auto_start_engine", False)))
-        # สถานะ startup จริงให้อ่านจาก registry เสมอ (เผื่อถูกแก้จากที่อื่น)
         self.auto_win_var.set(is_windows_startup_enabled())
 
     def _save_settings(self):
@@ -867,7 +955,6 @@ class CensorApp:
         except Exception:
             pass
 
-    # ---- start / stop ----
     def _start(self):
         if MISSING_LIBS:
             messagebox.showerror("ขาดไลบรารี", "กรุณาติดตั้ง: pip install " + " ".join(MISSING_LIBS))
@@ -901,14 +988,16 @@ class CensorApp:
             return
 
         self._save_settings()
-        self.status_var.set("สถานะ: กำลังทำงาน 🔴")
+        self.status_var.set("กำลังทำงาน")
+        self.status_dot.itemconfig(self._status_circle, fill=COLOR_DANGER)
         self.start_btn.config(state="disabled")
         self.stop_btn.config(state="normal")
         self.log("เริ่มการเซ็นเซอร์เสียงแบบเรียลไทม์แล้ว (กำลังปรับเทียบเสียงรบกวนรอบข้าง...)")
 
     def _stop(self):
         self.engine.stop()
-        self.status_var.set("สถานะ: หยุดทำงาน")
+        self.status_var.set("หยุดทำงาน")
+        self.status_dot.itemconfig(self._status_circle, fill=COLOR_TEXT_MUTED)
         self.start_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
         self.log("หยุดการทำงานแล้ว")
@@ -924,14 +1013,6 @@ class CensorApp:
 
 def main():
     root = tk.Tk()
-    try:
-        style = ttk.Style()
-        if "vista" in style.theme_names():
-            style.theme_use("vista")
-        elif "clam" in style.theme_names():
-            style.theme_use("clam")
-    except Exception:
-        pass
     app = CensorApp(root)
     root.mainloop()
 
