@@ -101,7 +101,7 @@ DEFAULT_SETTINGS = {
 }
 
 APP_NAME = "SKYFILM Voice Censor"
-APP_VERSION = "Beta 1.0.0.0.006 (ทดสอบใช้งาน)"
+APP_VERSION = "Beta 1.0.0.0.007 (ทดสอบใช้งาน)"
 APP_AUTHOR = "SKYFILM"
 CONTACT_URL = "https://linktr.ee/ken_kenpaw?utm_source=linktree_profile_share&ltsid=067166a7-2967-4b99-8ad9-2775d0e0b2f7"
 ABOUT_TEXT = (
