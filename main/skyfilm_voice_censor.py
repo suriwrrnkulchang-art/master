@@ -4,6 +4,9 @@
 =====================================================================
 โปรแกรมเซ็นเซอร์คำไม่สุภาพแบบเรียลไทม์ (Real-time Profanity Censor)
 เวอร์ชันปรับปรุง: SpeechRecognition + PyAudio (Google Web Speech API)
+
+*** เพิ่มระบบตรวจสอบ/ติดตั้งอัปเดตอัตโนมัติจาก GitHub ***
+(โครงสร้าง GUI และฟังก์ชันเดิมทั้งหมดไม่ถูกเปลี่ยนแปลง มีแค่เพิ่มส่วนเช็คอัปเดต)
 =====================================================================
 """
 
@@ -44,14 +47,11 @@ try:
 except ImportError:
     sf = None
 
-# ---------------------------------------------------------------------------
-# [เพิ่มใหม่] ระบบอัพเดทอัตโนมัติ — ไม่กระทบ GUI/ฟังก์ชันเดิมของโปรแกรม
-# ต้องมีไฟล์ auto_update.py อยู่โฟลเดอร์เดียวกับไฟล์นี้
-# ---------------------------------------------------------------------------
+# --- เพิ่มใหม่: โมดูลอัปเดตอัตโนมัติ (updater.py ต้องอยู่โฟลเดอร์เดียวกัน) ---
 try:
-    from auto_update import AutoUpdater
+    import updater as _updater
 except ImportError:
-    AutoUpdater = None
+    _updater = None
 
 IS_WINDOWS = (os.name == "nt")
 if IS_WINDOWS:
@@ -106,17 +106,9 @@ ABOUT_TEXT = (
     "เวอร์ชันนี้เป็นเวอร์ชันเบต้า หรือทดสอบใช้"
 )
 
-# ---------------------------------------------------------------------------
-# [เพิ่มใหม่] ค่าคงที่สำหรับระบบอัพเดทอัตโนมัติ
-# CURRENT_VERSION คือเลขเวอร์ชันจริงที่ใช้เทียบว่ามีอัพเดทใหม่กว่าหรือไม่
-# (แก้เลขนี้ในไฟล์ที่แจกจริงให้ตรงกับเวอร์ชันที่ปล่อยแต่ละครั้ง)
-# MANIFEST_URL คือลิงก์ไฟล์ manifest ที่โปรแกรมแอดมิน (admin_updater.py) เผยแพร่ไว้
-# ---------------------------------------------------------------------------
+# --- เพิ่มใหม่: เลขเวอร์ชันจริงของโปรแกรม ใช้เทียบกับ version.json บน GitHub ---
+# ทุกครั้งที่แอดมิน "เผยแพร่" อัปเดตใหม่ ให้แก้เลขนี้ในซอร์สโค้ดที่จะอัปโหลดขึ้น GitHub ด้วย
 CURRENT_VERSION = "1.0.0"
-MANIFEST_URL = (
-    "https://raw.githubusercontent.com/"
-    "suriwrrnkulchang-art/master/main/update_manifest.json"
-)
 
 # ---------------------------------------------------------------------------
 # ธีมสี (Design tokens)
@@ -463,23 +455,26 @@ class CensorApp:
         if self.settings.get("auto_start_engine") and not MISSING_LIBS:
             self.root.after(1200, self._start)
 
-        # -------------------------------------------------------------
-        # [เพิ่มใหม่] เริ่มระบบตรวจสอบอัพเดทอัตโนมัติ (ไม่กระทบ GUI/ฟังก์ชันเดิม)
-        # ถ้าไม่พบไฟล์ auto_update.py หรือไม่มี requests จะแค่ข้ามไปเงียบๆ
-        # -------------------------------------------------------------
-        self.updater = None
-        if AutoUpdater is not None:
-            try:
-                self.updater = AutoUpdater(
-                    app_dir=APP_DIR,
-                    current_version=CURRENT_VERSION,
-                    manifest_url=MANIFEST_URL,
-                    parent_window=self.root,
-                    log_fn=lambda msg: self.log_queue.put(msg),
-                )
-                self.root.after(3000, self.updater.check_in_background)
-            except Exception:
-                self.log_queue.put("เริ่มระบบตรวจสอบอัพเดทไม่สำเร็จ:\n" + traceback.format_exc())
+        # --- เพิ่มใหม่: ตั้งค่าระบบเช็คอัปเดตอัตโนมัติจาก GitHub ---
+        self._setup_updater()
+
+    # ---------------------------------------------------- ระบบอัปเดต (ใหม่) ---
+    def _setup_updater(self):
+        if _updater is None:
+            self.log("(ไม่พบไฟล์ updater.py จึงปิดระบบเช็คอัปเดตอัตโนมัติ)")
+            return
+        self.update_ctrl = _updater.UpdateController(
+            root=self.root,
+            app_dir=APP_DIR,
+            current_version=CURRENT_VERSION,
+            # ไฟล์เหล่านี้จะไม่ถูกทับตอนอัปเดต เพื่อรักษาคำหยาบ/ค่าที่ผู้ใช้ตั้งไว้
+            preserve_files=["bad_words.json", "censor_settings_sr.json"],
+            log_fn=self.log,
+        )
+        # เช็คอัปเดตหลังเปิดโปรแกรมไปแล้ว 3 วินาที (ไม่บล็อกหน้าจอตอนเปิด)
+        self.root.after(3000, lambda: self.update_ctrl.check_async(silent_if_no_update=True))
+        # เช็คซ้ำทุก 30 นาทีระหว่างที่เปิดโปรแกรมค้างไว้
+        self.update_ctrl.start_periodic_check(interval_seconds=1800)
 
     # ---------------------------------------------------------- ธีม / สไตล์ ---
     def _setup_style(self):
@@ -558,6 +553,8 @@ class CensorApp:
         header.pack(fill="x", padx=14, pady=(14, 4))
         ttk.Label(header, text=f"🛡  {APP_NAME}", style="Header.TLabel").pack(side="left")
         ttk.Label(header, text=f"  {APP_VERSION}", style="Muted.TLabel").pack(side="left", pady=(8, 0))
+        # --- เพิ่มใหม่: ปุ่มเล็ก ๆ เช็คอัปเดตด้วยตัวเอง (ไม่กระทบโครงสร้าง GUI เดิม) ---
+        ttk.Button(header, text="🔄 เช็คอัปเดต", command=self._manual_check_update).pack(side="right")
 
         control_frame = tk.Frame(self.root, bg=COLOR_PANEL, highlightbackground=COLOR_BORDER,
                                   highlightthickness=1)
@@ -727,7 +724,8 @@ class CensorApp:
 
         ttk.Label(inner, text=f"🛡  {APP_NAME}", style="SubHeader.TLabel",
                   font=self.font_header).pack(anchor="w")
-        ttk.Label(inner, text=f"เวอร์ชัน: {APP_VERSION}", style="CardMuted.TLabel").pack(anchor="w", pady=(2, 16))
+        ttk.Label(inner, text=f"เวอร์ชัน: {APP_VERSION}  (build {CURRENT_VERSION})",
+                  style="CardMuted.TLabel").pack(anchor="w", pady=(2, 16))
 
         sep1 = tk.Frame(inner, bg=COLOR_BORDER, height=1)
         sep1.pack(fill="x", pady=(0, 16))
@@ -1040,6 +1038,14 @@ class CensorApp:
         self.start_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
         self.log("หยุดการทำงานแล้ว")
+
+    # --- เพิ่มใหม่: เช็คอัปเดตด้วยตนเองจากปุ่มบนหน้าจอ ---
+    def _manual_check_update(self):
+        if _updater is None or not hasattr(self, "update_ctrl"):
+            messagebox.showinfo("เช็คอัปเดต", "ไม่พบระบบอัปเดต (updater.py) ในโฟลเดอร์โปรแกรม")
+            return
+        self.log("กำลังเช็คอัปเดต...")
+        self.update_ctrl.check_async(silent_if_no_update=False)
 
     def _on_close(self):
         try:
