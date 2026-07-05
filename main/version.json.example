@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0.012",
+  "description": "- แก้ไขปัญหาเสียงเซ็นเซอร์ค้าง\n- ปรับปรุงความไวในการตรวจจับคำหยาบ\n- เพิ่มภาษาอังกฤษ UK",
+  "released_at": "2026-07-05",
+  "main_url": "https://raw.githubusercontent.com/suriwrrnkulchang-art/55/main/Main.py"
+}
