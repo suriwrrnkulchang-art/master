@@ -13,9 +13,10 @@
   Google Drive Desktop, Dropbox, OneDrive ฯลฯ)
 - โปรแกรมหลัก (ที่ import โมดูลนี้) จะไม่ต้องต่อ GitHub เองเลย
   แค่คอยเช็คไฟล์ manifest.json ใน Update Channel เป็นระยะ ๆ
-- เมื่อพบเวอร์ชันใหม่กว่าเวอร์ชันที่ติดตั้งอยู่ -> เด้งป็อปอัพถามผู้ใช้
-  -> กด "ตกลง" -> โชว์หน้าโหลด -> คัดลอกไฟล์ใหม่ทับของเดิม (สำรองของเก่าไว้ก่อน)
-  -> รีสตาร์ทโปรแกรมให้อัตโนมัติ
+- เมื่อพบเวอร์ชันใหม่กว่าเวอร์ชันที่ติดตั้งอยู่ -> เด้งป็อปอัพหน้าเดียว
+  (สไตล์คล้าย OBS Studio) แสดงเวอร์ชันใหม่ + รายละเอียด + ปุ่ม
+  "ภายหลัง" / "อัพเดทตอนนี้" -> ถ้ากดอัพเดท จะสลับเป็นหน้า progress
+  ในหน้าต่างเดียวกัน -> เสร็จแล้วแสดงปุ่มให้ผู้ใช้กดยืนยันก่อนรีสตาร์ท
 
 การเรียกใช้ในโปรแกรมหลัก (เพิ่มแค่ 2-3 บรรทัด ไม่ต้องแก้ GUI/ฟังก์ชันเดิม):
 
@@ -95,7 +96,9 @@ class AutoUpdater:
     install_dir : โฟลเดอร์ที่จะให้ทับไฟล์ใหม่ลงไป (ค่าเริ่มต้น = โฟลเดอร์ที่ตัวโปรแกรมหลักอยู่)
     theme : dict สีธีม (ไม่ใส่ก็ได้ จะใช้ค่า default ที่เข้ากับธีมโปรแกรมหลัก)
     on_log : callback(str) เผื่ออยากต่อเข้ากับกล่อง log เดิมของโปรแกรมหลัก (ไม่ใส่ก็ได้)
-    auto_restart : bool ถ้า True (ค่าเริ่มต้น) จะรีสตาร์ทโปรแกรมอัตโนมัติหลังอัพเดทเสร็จ
+    auto_restart : bool — ไม่ได้ใช้แล้วในโหมดนี้ (รีสตาร์ทต้องรอผู้ใช้กดยืนยันเสมอ)
+        เก็บพารามิเตอร์นี้ไว้เพื่อความเข้ากันได้กับโค้ดเดิมที่เรียกใช้อยู่ แต่จะถูก
+        มองข้าม (ผู้ใช้ต้องกดปุ่ม "รีสตาร์ทตอนนี้" เองเสมอหลังอัพเดทเสร็จ)
     """
 
     def __init__(self, root, app_name, current_version, channel_dir,
@@ -109,6 +112,7 @@ class AutoUpdater:
         if theme:
             self.theme.update(theme)
         self.on_log = on_log or (lambda msg: None)
+        # หมายเหตุ: รีสตาร์ทจะรอผู้ใช้กดยืนยันเสมอ ไม่ auto restart ทันทีแล้ว
         self.auto_restart = auto_restart
 
         self._stop_flag = threading.Event()
@@ -227,7 +231,7 @@ class AutoUpdater:
             return  # เวอร์ชันบน Update Channel ไม่ได้ใหม่กว่าที่ติดตั้งอยู่ ไม่ต้องเด้งป็อปอัพ
 
         if remote_version in self._dismissed_versions:
-            return  # ผู้ใช้เพิ่งกด "ไม่ตกลง" กับเวอร์ชันนี้ไปแล้วในรอบก่อนหน้า (session นี้)
+            return  # ผู้ใช้เพิ่งกด "ภายหลัง" กับเวอร์ชันนี้ไปแล้วในรอบก่อนหน้า (session นี้)
 
         if self._popup_open:
             return
@@ -243,21 +247,32 @@ class AutoUpdater:
         # ต้องเรียก UI (popup) บนเธรดหลักของ tkinter เท่านั้น
         self.root.after(0, lambda: self._show_update_popup(manifest, package_dir))
 
-    # ------------------------------------------------------------- ป็อปอัพ (แบบหลายขั้นตอน)
-    # ขั้นตอน: 1) ถามตกลง/ไม่ตกลง -> 2) แสดงรายละเอียดอัพเดท + ปุ่มถัดไป
-    #          -> 3) หน้ากำลังดาวน์โหลด/ติดตั้ง -> 4) เสร็จสิ้น -> ปิด+เปิดโปรแกรมใหม่
+    # =====================================================================
+    # ป็อปอัพแบบหน้าจอเดียว (สไตล์คล้าย OBS Studio):
+    #   - เปิดมาแสดงข้อมูลเวอร์ชันใหม่ + รายละเอียด + ปุ่ม "ภายหลัง" / "อัพเดทตอนนี้"
+    #     อยู่ในหน้าต่างเดียว ไม่ต้องกดถัดไป/ย้อนกลับ
+    #   - กด "อัพเดทตอนนี้" -> เนื้อหาข้างในหน้าต่างเดิมสลับเป็นแถบ progress
+    #   - เสร็จแล้ว -> สลับเป็นข้อความสำเร็จ + ปุ่ม "รีสตาร์ทตอนนี้" ให้ผู้ใช้กดเอง
+    #     (ไม่รีสตาร์ทอัตโนมัติ ต้องรอผู้ใช้ยืนยันก่อนเสมอ)
+    # =====================================================================
     def _show_update_popup(self, manifest, package_dir):
         if self._popup_open:
             return
         self._popup_open = True
 
+        th = self.theme
+        version = manifest.get("version", "-")
+        app_display_name = manifest.get("app_name", self.app_name)
+        desc = manifest.get("description", "(ไม่มีรายละเอียดเพิ่มเติม)")
+        released_at = manifest.get("released_at", "")
+        current_ver = self._read_local_version()
+
         win = tk.Toplevel(self.root)
-        win.configure(bg=self.theme["panel"])
+        win.title("มีอัพเดทใหม่")
+        win.configure(bg=th["panel"])
         win.resizable(False, False)
         win.transient(self.root)
         win.grab_set()
-
-        version = manifest.get("version", "-")
 
         def center():
             win.update_idletasks()
@@ -269,8 +284,8 @@ class AutoUpdater:
             except Exception:
                 pass
 
-        def clear_win():
-            for child in win.winfo_children():
+        def clear_body():
+            for child in body.winfo_children():
                 child.destroy()
 
         def close_and_dismiss():
@@ -278,121 +293,132 @@ class AutoUpdater:
             self._popup_open = False
             win.destroy()
 
-        # ---------------- ขั้นตอนที่ 1: ถามว่าต้องการอัพเดทหรือไม่ ----------------
-        def step1_ask():
-            clear_win()
-            win.title("มีอัพเดทใหม่")
+        # ---------------- โครงหน้าต่างหลัก (คงที่ตลอด ไม่มีการเปิดหน้าต่างใหม่) ----------------
+        header = tk.Frame(win, bg=th["panel"])
+        header.pack(fill="x", padx=28, pady=(24, 4))
+        tk.Label(header, text="🛡", font=("Segoe UI Emoji", 22), bg=th["panel"], fg=th["accent"]).pack(side="left")
+        title_col = tk.Frame(header, bg=th["panel"])
+        title_col.pack(side="left", padx=(10, 0))
+        tk.Label(title_col, text=f"มีเวอร์ชันใหม่ของ {app_display_name}", font=("Tahoma", 13, "bold"),
+                 bg=th["panel"], fg=th["text"], anchor="w").pack(anchor="w")
+        tk.Label(title_col, text=f"เวอร์ชัน {version}  (เครื่องนี้ใช้อยู่ {current_ver})",
+                 bg=th["panel"], fg=th["text_muted"], anchor="w").pack(anchor="w")
+
+        sep = tk.Frame(win, bg=th["border"], height=1)
+        sep.pack(fill="x", padx=28, pady=(14, 0))
+
+        body = tk.Frame(win, bg=th["panel"])
+        body.pack(fill="both", expand=True, padx=28, pady=(14, 0))
+
+        footer = tk.Frame(win, bg=th["panel"])
+        footer.pack(fill="x", padx=28, pady=(14, 22))
+
+        def clear_footer():
+            for child in footer.winfo_children():
+                child.destroy()
+
+        # ---------------- สถานะ 1: แสดงรายละเอียด + ปุ่มเลือก (หน้าเดียว จบ) ----------------
+        def state_info():
+            clear_body()
+            clear_footer()
             win.protocol("WM_DELETE_WINDOW", close_and_dismiss)
-            th = self.theme
 
-            tk.Label(win, text=f"🆕 พบอัพเดทใหม่สำหรับ {manifest.get('app_name', self.app_name)}",
-                     font=("Tahoma", 13, "bold"), bg=th["panel"], fg=th["accent"]).pack(
-                anchor="w", padx=24, pady=(22, 6))
-            tk.Label(win, text=f"เวอร์ชันใหม่: {version}   (ปัจจุบัน: {self._read_local_version()})",
-                     bg=th["panel"], fg=th["text"]).pack(anchor="w", padx=24, pady=(0, 4))
-            tk.Label(win, text="ต้องการอัพเดทตอนนี้หรือไม่?", bg=th["panel"], fg=th["text"],
-                     font=("Tahoma", 10)).pack(anchor="w", padx=24, pady=(6, 4))
-
-            btn_row = tk.Frame(win, bg=th["panel"])
-            btn_row.pack(pady=(14, 22))
-            tk.Button(btn_row, text="ไม่ตกลง", command=close_and_dismiss, bg=th["panel_alt"], fg=th["text"],
-                      relief="flat", padx=20, pady=7).pack(side="left", padx=8)
-            tk.Button(btn_row, text="ตกลง", command=step2_details, bg=th["accent"], fg="#062018",
-                      relief="flat", padx=24, pady=7, font=("Tahoma", 10, "bold")).pack(side="left", padx=8)
-            center()
-
-        # ---------------- ขั้นตอนที่ 2: แสดงรายละเอียดอัพเดท ----------------
-        def step2_details():
-            clear_win()
-            win.title("รายละเอียดอัพเดท")
-            win.protocol("WM_DELETE_WINDOW", close_and_dismiss)
-            th = self.theme
-
-            name = manifest.get("app_name", self.app_name)
-            desc = manifest.get("description", "(ไม่มีรายละเอียดเพิ่มเติม)")
-            released_at = manifest.get("released_at", "")
-
-            tk.Label(win, text=f"📋 รายละเอียดการอัพเดท: {name}", font=("Tahoma", 13, "bold"),
-                     bg=th["panel"], fg=th["accent"]).pack(anchor="w", padx=24, pady=(22, 6))
-            tk.Label(win, text=f"เวอร์ชันใหม่: {version}", bg=th["panel"], fg=th["text"]).pack(
-                anchor="w", padx=24)
             if released_at:
-                tk.Label(win, text=f"เผยแพร่เมื่อ: {released_at}", bg=th["panel"], fg=th["text_muted"]).pack(
-                    anchor="w", padx=24, pady=(2, 8))
+                tk.Label(body, text=f"เผยแพร่เมื่อ: {released_at}", bg=th["panel"], fg=th["text_muted"],
+                         anchor="w").pack(anchor="w", pady=(0, 8))
 
-            tk.Label(win, text="มีอะไรใหม่บ้าง:", bg=th["panel"], fg=th["accent"]).pack(anchor="w", padx=24)
-            detail_box = tk.Text(win, width=56, height=9, wrap="word", bg=th["panel_alt"], fg=th["text"],
-                                  relief="flat", borderwidth=0)
+            tk.Label(body, text="มีอะไรใหม่บ้าง:", bg=th["panel"], fg=th["accent"], anchor="w").pack(anchor="w")
+            detail_box = tk.Text(body, width=54, height=8, wrap="word", bg=th["panel_alt"], fg=th["text"],
+                                  relief="flat", borderwidth=0, padx=10, pady=8)
             detail_box.insert("1.0", desc)
             detail_box.config(state="disabled")
-            detail_box.pack(padx=24, pady=(4, 14))
+            detail_box.pack(fill="both", expand=True, pady=(6, 0))
 
-            btn_row = tk.Frame(win, bg=th["panel"])
-            btn_row.pack(pady=(0, 20))
-            tk.Button(btn_row, text="ย้อนกลับ", command=step1_ask, bg=th["panel_alt"], fg=th["text"],
-                      relief="flat", padx=18, pady=7).pack(side="left", padx=8)
-            tk.Button(btn_row, text="ถัดไป ▶", command=step3_downloading, bg=th["accent"], fg="#062018",
-                      relief="flat", padx=22, pady=7, font=("Tahoma", 10, "bold")).pack(side="left", padx=8)
+            tk.Button(footer, text="ภายหลัง", command=close_and_dismiss, bg=th["panel_alt"], fg=th["text"],
+                      relief="flat", padx=20, pady=8, activebackground=th["border"],
+                      activeforeground=th["text"]).pack(side="right", padx=(8, 0))
+            tk.Button(footer, text="⬇  อัพเดทตอนนี้", command=state_installing, bg=th["accent"], fg="#062018",
+                      relief="flat", padx=22, pady=8, font=("Tahoma", 10, "bold"),
+                      activebackground=th["accent_dark"], activeforeground="#062018").pack(side="right")
             center()
 
-        # ---------------- ขั้นตอนที่ 3: กำลังดาวน์โหลด/ติดตั้ง ----------------
-        def step3_downloading():
-            clear_win()
-            win.title("กำลังอัพเดท")
+        # ---------------- สถานะ 2: กำลังติดตั้ง (สลับเนื้อหาในหน้าต่างเดิม) ----------------
+        def state_installing():
+            clear_body()
+            clear_footer()
             win.protocol("WM_DELETE_WINDOW", lambda: None)  # กันปิดระหว่างติดตั้ง
-            th = self.theme
 
-            tk.Label(win, text="⏳ กำลังดาวน์โหลดและติดตั้งอัพเดท กรุณารอสักครู่...",
-                     bg=th["panel"], fg=th["text"], font=("Tahoma", 11)).pack(padx=32, pady=(28, 12))
-            progress = ttk.Progressbar(win, mode="indeterminate", length=300)
-            progress.pack(padx=32, pady=(0, 28))
+            tk.Label(body, text="กำลังดาวน์โหลดและติดตั้งอัพเดท กรุณารอสักครู่...",
+                     bg=th["panel"], fg=th["text"], anchor="w", justify="left").pack(anchor="w", pady=(10, 14))
+            progress = ttk.Progressbar(body, mode="indeterminate", length=380)
+            progress.pack(fill="x", pady=(0, 10))
             progress.start(12)
             center()
 
             def do_apply():
                 ok, err = self._apply_update_files(package_dir)
-                self.root.after(0, lambda: step4_done(ok, err, progress))
+                self.root.after(0, lambda: state_done(ok, err, progress))
 
             threading.Thread(target=do_apply, daemon=True).start()
 
-        # ---------------- ขั้นตอนที่ 4: เสร็จสิ้น ----------------
-        def step4_done(ok, err, progress):
-            progress.stop()
-            clear_win()
-            th = self.theme
+        # ---------------- สถานะ 3: เสร็จสิ้น / ผิดพลาด (ต้องกดยืนยันก่อนรีสตาร์ทเสมอ) ----------------
+        def state_done(ok, err, progress):
+            try:
+                progress.stop()
+            except Exception:
+                pass
+            clear_body()
+            clear_footer()
 
             if ok:
                 self._write_local_version(version)
                 win.title("อัพเดทสำเร็จ")
                 win.protocol("WM_DELETE_WINDOW", lambda: None)
-                tk.Label(win, text="✅ ติดตั้งอัพเดทเสร็จสิ้น", font=("Tahoma", 13, "bold"),
-                         bg=th["panel"], fg=th["accent"]).pack(padx=32, pady=(28, 6))
-                tk.Label(win, text=f"อัพเดทเป็นเวอร์ชัน {version} เรียบร้อยแล้ว\n"
-                                    "กด 'เสร็จสิ้น' เพื่อปิดและเปิดโปรแกรมใหม่ทันที",
-                         bg=th["panel"], fg=th["text"], justify="center").pack(padx=32, pady=(0, 18))
 
-                def on_finish():
+                row = tk.Frame(body, bg=th["panel"])
+                row.pack(fill="x", pady=(6, 4))
+                tk.Label(row, text="✅", font=("Segoe UI Emoji", 16), bg=th["panel"], fg=th["accent"]).pack(side="left")
+                tk.Label(row, text=" ติดตั้งอัพเดทเสร็จสิ้น", font=("Tahoma", 12, "bold"),
+                         bg=th["panel"], fg=th["accent"]).pack(side="left")
+                tk.Label(body, text=f"อัพเดทเป็นเวอร์ชัน {version} เรียบร้อยแล้ว\n"
+                                     "ต้องรีสตาร์ทโปรแกรมเพื่อให้การอัพเดทมีผล",
+                         bg=th["panel"], fg=th["text"], justify="left", anchor="w").pack(anchor="w", pady=(6, 0))
+
+                def on_restart_now():
                     self._popup_open = False
                     win.destroy()
-                    if self.auto_restart:
-                        self._restart_app()
+                    self._restart_app()
 
-                tk.Button(win, text="เสร็จสิ้น", command=on_finish, bg=th["accent"], fg="#062018",
-                          relief="flat", padx=26, pady=8, font=("Tahoma", 10, "bold")).pack(pady=(0, 26))
-                self.on_log(f"✅ อัพเดทเป็นเวอร์ชัน {version} สำเร็จแล้ว")
+                def on_restart_later():
+                    self._popup_open = False
+                    win.destroy()
+                    self.on_log("ℹ อัพเดทติดตั้งเสร็จแล้ว แต่ยังไม่รีสตาร์ท — กรุณาปิดและเปิดโปรแกรมใหม่เองเมื่อพร้อม")
+
+                tk.Button(footer, text="รีสตาร์ทภายหลัง", command=on_restart_later, bg=th["panel_alt"],
+                          fg=th["text"], relief="flat", padx=18, pady=8).pack(side="right", padx=(8, 0))
+                tk.Button(footer, text="🔄  รีสตาร์ทตอนนี้", command=on_restart_now, bg=th["accent"],
+                          fg="#062018", relief="flat", padx=22, pady=8, font=("Tahoma", 10, "bold")).pack(side="right")
+
+                self.on_log(f"✅ อัพเดทเป็นเวอร์ชัน {version} สำเร็จแล้ว (รอผู้ใช้ยืนยันก่อนรีสตาร์ท)")
             else:
                 win.title("อัพเดทไม่สำเร็จ")
                 win.protocol("WM_DELETE_WINDOW", close_and_dismiss)
-                tk.Label(win, text="❌ อัพเดทไม่สำเร็จ", font=("Tahoma", 13, "bold"),
-                         bg=th["panel"], fg=th["danger"]).pack(padx=32, pady=(28, 6))
-                tk.Label(win, text=f"เกิดข้อผิดพลาด: {err}\nได้กู้คืนไฟล์เดิมกลับให้แล้ว",
-                         bg=th["panel"], fg=th["text"], justify="center", wraplength=360).pack(padx=32, pady=(0, 18))
-                tk.Button(win, text="ปิด", command=close_and_dismiss, bg=th["panel_alt"], fg=th["text"],
-                          relief="flat", padx=22, pady=7).pack(pady=(0, 26))
+
+                row = tk.Frame(body, bg=th["panel"])
+                row.pack(fill="x", pady=(6, 4))
+                tk.Label(row, text="❌", font=("Segoe UI Emoji", 16), bg=th["panel"], fg=th["danger"]).pack(side="left")
+                tk.Label(row, text=" อัพเดทไม่สำเร็จ", font=("Tahoma", 12, "bold"),
+                         bg=th["panel"], fg=th["danger"]).pack(side="left")
+                tk.Label(body, text=f"เกิดข้อผิดพลาด: {err}\nได้กู้คืนไฟล์เดิมกลับให้แล้ว",
+                         bg=th["panel"], fg=th["text"], justify="left", anchor="w", wraplength=380).pack(
+                    anchor="w", pady=(6, 0))
+
+                tk.Button(footer, text="ปิด", command=close_and_dismiss, bg=th["panel_alt"], fg=th["text"],
+                          relief="flat", padx=22, pady=8).pack(side="right")
                 self.on_log("❌ อัพเดทไม่สำเร็จ: " + str(err) + "\nได้กู้คืนไฟล์เดิมกลับแล้ว")
             center()
 
-        step1_ask()
+        state_info()
 
     def _apply_update_files(self, package_dir):
         """คัดลอกไฟล์จาก package_dir ทับ install_dir แบบปลอดภัย:
