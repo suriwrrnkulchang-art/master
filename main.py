@@ -4,6 +4,7 @@
 =====================================================================
 โปรแกรมเซ็นเซอร์คำไม่สุภาพแบบเรียลไทม์ (Real-time Profanity Censor)
 เวอร์ชันปรับปรุง: SpeechRecognition + PyAudio (Google Web Speech API)
++ ระบบตรวจสอบอัปเดตอัตโนมัติผ่าน GitHub
 =====================================================================
 """
 
@@ -14,6 +15,8 @@ import queue
 import threading
 import traceback
 import webbrowser
+import urllib.request
+import urllib.error
 from collections import deque
 
 import tkinter as tk
@@ -97,6 +100,19 @@ ABOUT_TEXT = (
     "เวอร์ชันนี้เป็นเวอร์ชันเบต้า หรือทดสอบใช้"
 )
 
+# =====================================================================
+# ระบบตรวจสอบอัปเดตอัตโนมัติ (Auto Update Checker)
+# =====================================================================
+# ตัวเลขเวอร์ชันปัจจุบันของโปรแกรมนี้ (ใช้เทียบกับค่าที่แอดมินประกาศบน GitHub)
+CURRENT_APP_VERSION = "1.0.0"
+
+# ลิงก์ไฟล์ update_info.json แบบ "raw" บน GitHub ที่แอดมินจะอัปเดตด้วย
+# สคริปต์ admin_update_publisher.py (ดูไฟล์แยกต่างหาก)
+# รูปแบบลิงก์: https://raw.githubusercontent.com/<user>/<repo>/<branch>/update_info.json
+UPDATE_INFO_URL = "https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME/main/update_info.json"
+
+UPDATE_CHECK_TIMEOUT = 8  # วินาที
+
 # ---------------------------------------------------------------------------
 # ธีมสี (Design tokens)
 # ---------------------------------------------------------------------------
@@ -152,6 +168,57 @@ def is_windows_startup_enabled():
             winreg.CloseKey(key)
     except Exception:
         return False
+
+
+def _parse_version(v):
+    """แปลงสตริงเวอร์ชัน เช่น '1.2.10' เป็น tuple (1, 2, 10) เพื่อเทียบค่าได้ถูกต้อง"""
+    parts = []
+    for chunk in str(v).strip().split("."):
+        num = ""
+        for ch in chunk:
+            if ch.isdigit():
+                num += ch
+            else:
+                break
+        parts.append(int(num) if num else 0)
+    return tuple(parts) if parts else (0,)
+
+
+def is_newer_version(remote_version, local_version):
+    try:
+        return _parse_version(remote_version) > _parse_version(local_version)
+    except Exception:
+        return str(remote_version) != str(local_version)
+
+
+def fetch_update_info(url=UPDATE_INFO_URL, timeout=UPDATE_CHECK_TIMEOUT):
+    """
+    ดึงไฟล์ update_info.json จาก GitHub (raw content)
+    คืนค่า dict ของข้อมูลอัปเดต หรือ None ถ้าดึงไม่สำเร็จ / รูปแบบไม่ถูกต้อง
+    รูปแบบไฟล์ที่คาดหวัง:
+    {
+        "program_name": "SKYFILM Voice Censor",
+        "latest_version": "1.1.0",
+        "details": "รายละเอียดการอัปเดต...",
+        "download_url": "https://...",
+        "mandatory": false
+    }
+    """
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "SKYFILM-Voice-Censor-UpdateChecker", "Cache-Control": "no-cache"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return None
+        if "latest_version" not in data:
+            return None
+        return data
+    except Exception:
+        return None
 
 
 class CensorEngine:
@@ -442,6 +509,107 @@ class CensorApp:
         if self.settings.get("auto_start_engine") and not MISSING_LIBS:
             self.root.after(1200, self._start)
 
+        # เริ่มตรวจสอบอัปเดตในเบื้องหลัง (ไม่บล็อก UI) ทุกครั้งที่เปิดโปรแกรม
+        self.root.after(800, self._check_for_updates_background)
+
+    # ---------------------------------------------------- ระบบอัปเดตอัตโนมัติ ---
+    def _check_for_updates_background(self):
+        threading.Thread(target=self._check_for_updates_worker, daemon=True).start()
+
+    def _check_for_updates_worker(self):
+        info = fetch_update_info(UPDATE_INFO_URL)
+        if not info:
+            self.log_queue.put("ℹ️ ตรวจสอบอัปเดต: ไม่พบข้อมูล หรือเชื่อมต่อไม่ได้ (ข้ามการตรวจสอบ)")
+            return
+        remote_version = str(info.get("latest_version", "")).strip()
+        if not remote_version:
+            return
+        if is_newer_version(remote_version, CURRENT_APP_VERSION):
+            self.root.after(0, lambda: self._show_update_popup(info))
+        else:
+            self.log_queue.put(f"✅ ตรวจสอบอัปเดตแล้ว: ใช้เวอร์ชันล่าสุดอยู่แล้ว ({CURRENT_APP_VERSION})")
+
+    def _show_update_popup(self, info):
+        program_name = info.get("program_name") or APP_NAME
+        remote_version = str(info.get("latest_version", "-"))
+        details = info.get("details") or "ไม่มีรายละเอียดเพิ่มเติม"
+        download_url = info.get("download_url") or ""
+        mandatory = bool(info.get("mandatory", False))
+
+        win = tk.Toplevel(self.root)
+        win.title("มีอัปเดตใหม่")
+        win.configure(bg=COLOR_PANEL)
+        win.geometry("480x420")
+        win.minsize(420, 360)
+        win.transient(self.root)
+        win.grab_set()
+
+        # ให้ป็อปอัพอยู่กึ่งกลางหน้าจอ/หน้าต่างหลัก
+        win.update_idletasks()
+        try:
+            x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (480 // 2)
+            y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (420 // 2)
+            win.geometry(f"+{max(x,0)}+{max(y,0)}")
+        except Exception:
+            pass
+
+        pad_outer = ttk.Frame(win, style="Card.TFrame")
+        pad_outer.pack(fill="both", expand=True, padx=18, pady=18)
+
+        ttk.Label(pad_outer, text="🚀 มีเวอร์ชันใหม่ให้อัปเดต!", style="SubHeader.TLabel",
+                  font=self.font_subheader).pack(anchor="w")
+
+        ttk.Label(pad_outer, text=f"โปรแกรม: {program_name}", style="Card.TLabel").pack(
+            anchor="w", pady=(10, 2))
+        ttk.Label(pad_outer, text=f"เวอร์ชันปัจจุบันของคุณ: {CURRENT_APP_VERSION}",
+                  style="CardMuted.TLabel").pack(anchor="w")
+        ttk.Label(pad_outer, text=f"เวอร์ชันล่าสุด: {remote_version}",
+                  style="Danger.TLabel").pack(anchor="w", pady=(0, 10))
+
+        ttk.Label(pad_outer, text="รายละเอียดการอัปเดต:", style="Card.TLabel").pack(anchor="w")
+
+        details_box = scrolledtext.ScrolledText(
+            pad_outer, height=8, wrap="word", bg=COLOR_PANEL_ALT, fg=COLOR_TEXT,
+            insertbackground=COLOR_TEXT, relief="flat", borderwidth=0,
+        )
+        details_box.pack(fill="both", expand=True, pady=(4, 12))
+        details_box.insert("1.0", details)
+        details_box.config(state="disabled")
+
+        btn_row = ttk.Frame(pad_outer, style="Card.TFrame")
+        btn_row.pack(fill="x")
+
+        def do_close():
+            if mandatory:
+                if not messagebox.askyesno(
+                    "คำเตือน",
+                    "การอัปเดตนี้เป็นการอัปเดตที่จำเป็น การไม่อัปเดตอาจทำให้โปรแกรมใช้งานไม่ได้ตามปกติ\n"
+                    "ต้องการปิดหน้าต่างนี้โดยไม่อัปเดตหรือไม่?",
+                    parent=win,
+                ):
+                    return
+            win.grab_release()
+            win.destroy()
+
+        def do_update():
+            if download_url:
+                try:
+                    webbrowser.open(download_url, new=2)
+                except Exception as e:
+                    messagebox.showerror("เปิดลิงก์ไม่สำเร็จ", str(e), parent=win)
+            else:
+                messagebox.showinfo(
+                    "ไม่มีลิงก์ดาวน์โหลด",
+                    "แอดมินยังไม่ได้ระบุลิงก์ดาวน์โหลดสำหรับอัปเดตนี้",
+                    parent=win,
+                )
+
+        ttk.Button(btn_row, text="⬇  ไปหน้าอัปเดต", style="Accent.TButton",
+                   command=do_update).pack(side="left")
+        ttk.Button(btn_row, text="ปิด", command=do_close).pack(side="right")
+
+        self.log(f"🔔 พบอัปเดตใหม่: {program_name} เวอร์ชัน {remote_version}")
+
     # ---------------------------------------------------------- ธีม / สไตล์ ---
     def _setup_style(self):
         default_font_family = "Tahoma" if IS_WINDOWS else "Helvetica"
@@ -539,6 +707,9 @@ class CensorApp:
         self.status_var = tk.StringVar(value="หยุดทำงาน")
         ttk.Label(inner, textvariable=self.status_var, style="Card.TLabel",
                   font=self.font_subheader).pack(side="left")
+
+        ttk.Button(inner, text="🔄 ตรวจสอบอัปเดต", command=self._check_for_updates_manual).pack(
+            side="right", padx=(8, 0))
 
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill="both", expand=True, padx=14, pady=(0, 14))
@@ -688,7 +859,8 @@ class CensorApp:
 
         ttk.Label(inner, text=f"🛡  {APP_NAME}", style="SubHeader.TLabel",
                   font=self.font_header).pack(anchor="w")
-        ttk.Label(inner, text=f"เวอร์ชัน: {APP_VERSION}", style="CardMuted.TLabel").pack(anchor="w", pady=(2, 16))
+        ttk.Label(inner, text=f"เวอร์ชัน: {APP_VERSION} (build {CURRENT_APP_VERSION})",
+                  style="CardMuted.TLabel").pack(anchor="w", pady=(2, 16))
 
         sep1 = tk.Frame(inner, bg=COLOR_BORDER, height=1)
         sep1.pack(fill="x", pady=(0, 16))
@@ -751,6 +923,26 @@ class CensorApp:
         except queue.Empty:
             pass
         self.root.after(100, self._poll_log)
+
+    def _check_for_updates_manual(self):
+        self.log("🔎 กำลังตรวจสอบอัปเดตด้วยตนเอง...")
+        threading.Thread(target=self._check_for_updates_worker_manual, daemon=True).start()
+
+    def _check_for_updates_worker_manual(self):
+        info = fetch_update_info(UPDATE_INFO_URL)
+        if not info:
+            self.log_queue.put("❌ ตรวจสอบอัปเดตไม่สำเร็จ (เชื่อมต่อไม่ได้ หรือยังไม่มีการประกาศอัปเดต)")
+            self.root.after(0, lambda: messagebox.showinfo(
+                "ตรวจสอบอัปเดต",
+                "ไม่พบข้อมูลอัปเดต หรือเชื่อมต่ออินเทอร์เน็ต/GitHub ไม่สำเร็จ"))
+            return
+        remote_version = str(info.get("latest_version", "")).strip()
+        if remote_version and is_newer_version(remote_version, CURRENT_APP_VERSION):
+            self.root.after(0, lambda: self._show_update_popup(info))
+        else:
+            self.log_queue.put(f"✅ ใช้เวอร์ชันล่าสุดอยู่แล้ว ({CURRENT_APP_VERSION})")
+            self.root.after(0, lambda: messagebox.showinfo(
+                "ตรวจสอบอัปเดต", f"คุณใช้เวอร์ชันล่าสุดอยู่แล้ว ({CURRENT_APP_VERSION})"))
 
     def _bind_autosave(self):
         self.input_combo.bind("<<ComboboxSelected>>", lambda e: self._save_settings())
