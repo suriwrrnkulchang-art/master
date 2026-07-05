@@ -101,7 +101,7 @@ DEFAULT_SETTINGS = {
 }
 
 APP_NAME = "SKYFILM Voice Censor"
-APP_VERSION = "Beta 1.0.0.0.2 (ทดสอบใช้งาน)"
+APP_VERSION = "Beta 1.0 (ทดสอบใช้งาน)"
 APP_AUTHOR = "SKYFILM"
 CONTACT_URL = "https://linktr.ee/ken_kenpaw?utm_source=linktree_profile_share&ltsid=067166a7-2967-4b99-8ad9-2775d0e0b2f7"
 ABOUT_TEXT = (
@@ -460,7 +460,13 @@ class CensorApp:
         # เริ่มระบบตรวจสอบอัพเดทอัตโนมัติ (ไม่กระทบ GUI/ฟังก์ชันเดิมใดๆ)
         # ------------------------------------------------------------
         self.updater = None
-        if auto_updater is not None and UPDATE_CHANNEL_DIR:
+        if auto_updater is None:
+            self.log_queue.put("⚠ ไม่พบไฟล์ auto_updater.py (ต้องวางไว้โฟลเดอร์เดียวกับโปรแกรมหลัก) "
+                                "— ระบบอัพเดทอัตโนมัติจึงไม่ทำงาน")
+        elif not UPDATE_CHANNEL_DIR:
+            self.log_queue.put("⚠ ยังไม่ได้ตั้งค่า UPDATE_CHANNEL_DIR ในไฟล์โปรแกรมหลัก "
+                                "จึงยังไม่เริ่มระบบตรวจสอบอัพเดท (แก้ค่านี้ให้ชี้ไปยังโฟลเดอร์ Update Channel แล้วเปิดโปรแกรมใหม่)")
+        else:
             try:
                 self.updater = auto_updater.attach(
                     root=self.root,
