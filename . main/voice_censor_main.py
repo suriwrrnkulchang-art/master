@@ -115,7 +115,7 @@ ABOUT_TEXT = (
 CURRENT_VERSION = "1.0.0"
 MANIFEST_URL = (
     "https://raw.githubusercontent.com/"
-    "suriwrrnkulchang-art/master/main/update_manifest.json"
+    "suriwrrnkulchang-art/master/main/.%20main/update_manifest.json"
 )
 
 # ---------------------------------------------------------------------------
