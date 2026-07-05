@@ -1,1 +1,19 @@
 
+{
+  "app_name": "SKYFILM Voice Censor",
+  "version": "1.0.0",
+  "changelog": "เวอร์ชันเริ่มต้น — เปิดใช้งานระบบเซ็นเซอร์คำไม่สุภาพแบบเรียลไทม์ ยังไม่มีการอัพเดทเพิ่มเติม",
+  "published_at": "2026-07-05T00:00:00+00:00",
+  "files": [
+    {
+      "path": "voice_censor_main.py",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000",
+      "raw_url": "https://raw.githubusercontent.com/suriwrrnkulchang-art/master/main/voice_censor_main.py"
+    },
+    {
+      "path": "auto_update.py",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000",
+      "raw_url": "https://raw.githubusercontent.com/suriwrrnkulchang-art/master/main/auto_update.py"
+    }
+  ]
+}
